@@ -1,0 +1,128 @@
+name: GitHub Release
+
+on:
+  schedule:
+    # Runs at 23:15 Asia/Shanghai (UTC+8) => 15:15 UTC
+    - cron: '15 15 * * *'
+  push:
+    branches: [ firtool-1.62.1 ]
+
+jobs:
+  # 1. Build artifacts in parallel
+  build:
+    strategy:
+      matrix:
+        os: [ ubuntu-22.04, ubuntu-24.04 ]
+    runs-on: ubuntu-latest
+    container: ghcr.io/openxiangshan/xs-env:${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Get version tag
+        shell: bash
+        run: |
+          BRANCH="${GITHUB_REF_NAME}"
+          VERSION="${BRANCH#firtool-}"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      - name: Install dependencies
+        run: |
+          apt update
+          apt install -y cmake ninja-build
+
+      - name: Configure
+        run: |
+          cmake -G Ninja llvm/llvm -B build       \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo     \
+            -DLLVM_ENABLE_ASSERTIONS=ON           \
+            -DLLVM_TARGETS_TO_BUILD=host          \
+            -DLLVM_ENABLE_PROJECTS=mlir           \
+            -DLLVM_EXTERNAL_PROJECTS=circt        \
+            -DLLVM_EXTERNAL_CIRCT_SOURCE_DIR=$PWD \
+            -DLLVM_BUILD_EXAMPLES=OFF             \
+            -DLLVM_ENABLE_TERMINFO=OFF            \
+            -DLLVM_ENABLE_ZSTD=OFF                \
+            -DVERILATOR_DISABLE=ON                \
+            -DCMAKE_EXPORT_COMPILE_COMMANDS=OFF
+
+      - name: Build
+        run: |
+          ninja -C build firtool
+
+      - name: Rename
+        run: |
+          cp build/bin/firtool firtool-${{ env.VERSION }}-${{ matrix.os }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: firtool-${{ env.VERSION }}-${{ matrix.os }}
+          path: firtool-${{ env.VERSION }}-${{ matrix.os }}
+
+  # 2. Create release if there are new commits since last tag
+  release:
+    if: github.event_name == 'schedule'
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+
+      - name: Get version tag
+        shell: bash
+        run: |
+          BRANCH="${GITHUB_REF_NAME}"
+          VERSION="${BRANCH#firtool-}"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      - name: Fetch all tags
+        run: git fetch --tags --force
+
+      - name: Check for commits since last release
+        id: check_changes
+        shell: bash
+        run: |
+          LATEST_TAG="$(git tag -l "firtool-${VERSION}-*" --sort=-v:refname | head -n1 || true)"
+          if [ -z "$LATEST_TAG" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            COUNT=$(git rev-list "${LATEST_TAG}..HEAD" --count)
+            if [ "$COUNT" -gt 0 ]; then
+              echo "changed=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "changed=false" >> "$GITHUB_OUTPUT"
+            fi
+          fi
+
+      - name: Set release date (UTC+8)
+        run: |
+          DATE=$(TZ=Asia/Shanghai date +%Y%m%d)
+          echo "RELEASE_TAG=firtool-${VERSION}-${DATE}" >> "$GITHUB_ENV"
+
+      - name: Create git tag
+        if: steps.check_changes.outputs.changed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "${{ env.RELEASE_TAG }}" -m "Release ${{ env.RELEASE_TAG }}"
+          git push origin "${{ env.RELEASE_TAG }}"
+
+      - name: Create release
+        if: steps.check_changes.outputs.changed == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: ${{ env.RELEASE_TAG }}
+          make_latest: true
+          fail_on_unmatched_files: true
+          preserve_order: true
+          files: |
+            firtool-${{ env.VERSION }}-*
