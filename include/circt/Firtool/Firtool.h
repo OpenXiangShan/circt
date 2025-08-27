@@ -147,6 +147,9 @@ public:
 
   bool getEmitAllBindFiles() const { return emitAllBindFiles; }
 
+  bool shouldExtractBranchCover() const { return extractBranchCover; }
+  bool shouldLowerCoverPoints() const { return extractBranchCover; }
+
   // Setters, used by the CAPI
   FirtoolOptions &setOutputFilename(StringRef name) {
     outputFilename = name;
@@ -398,6 +401,10 @@ public:
 
   FirtoolOptions &setEmitAllBindFiles(bool value) {
     emitAllBindFiles = value;
+  }
+
+  FirtoolOptions &setExtractBranchCover(bool value) {
+    extractBranchCover = value;
     return *this;
   }
 
@@ -456,6 +463,7 @@ private:
   bool lintStaticAsserts;
   bool lintXmrsInDesign;
   bool emitAllBindFiles;
+  bool extractBranchCover;
 };
 
 void registerFirtoolCLOptions();
