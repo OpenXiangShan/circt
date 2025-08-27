@@ -129,6 +129,8 @@ public:
   }
   bool shouldExtractTestCode() const { return extractTestCode; }
   bool shouldFixupEICGWrapper() const { return fixupEICGWrapper; }
+  bool shouldExtractBranchCover() const { return extractBranchCover; }
+  bool shouldLowerCoverPoints() const { return extractBranchCover; }
 
   // Setters, used by the CAPI
   FirtoolOptions &setOutputFilename(StringRef name) {
@@ -349,6 +351,11 @@ public:
     return *this;
   }
 
+  FirtoolOptions &setExtractBranchCover(bool value) {
+    extractBranchCover = value;
+    return *this;
+  }
+
 private:
   std::string outputFilename;
   bool disableAnnotationsUnknown;
@@ -394,6 +401,7 @@ private:
   bool stripFirDebugInfo;
   bool stripDebugInfo;
   bool fixupEICGWrapper;
+  bool extractBranchCover;
 };
 
 void registerFirtoolCLOptions();

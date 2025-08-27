@@ -95,6 +95,13 @@ LogicalResult firtool::populateCHIRRTLToLowFIRRTL(mlir::PassManager &pm,
       !opt.shouldDisableHoistingHWPassthrough()));
   pm.nest<firrtl::CircuitOp>().addPass(firrtl::createProbeDCEPass());
 
+  // Coverage instrumentation
+  if (opt.shouldExtractBranchCover())
+    pm.nest<firrtl::CircuitOp>().addPass(
+        firrtl::createFindBranchCoverPointPass());
+  if (opt.shouldLowerCoverPoints())
+    pm.nest<firrtl::CircuitOp>().addPass(firrtl::createLowerCoverPointsPass());
+
   if (opt.shouldDedup())
     pm.nest<firrtl::CircuitOp>().addPass(firrtl::createDedupPass());
 
@@ -658,6 +665,11 @@ struct FirtoolCmdOptions {
       "fixup-eicg-wrapper",
       llvm::cl::desc("Lower `EICG_wrapper` modules into clock gate intrinsics"),
       llvm::cl::init(false)};
+
+  llvm::cl::opt<bool> extractBranchCover{
+      "extract-branch-cover",
+      llvm::cl::desc("Instrument the circuit to extract branch coverage"),
+      llvm::cl::init(false)};
 };
 } // namespace
 
@@ -693,7 +705,8 @@ circt::firtool::FirtoolOptions::FirtoolOptions()
       ckgModuleName("EICG_wrapper"), ckgInputName("in"), ckgOutputName("out"),
       ckgEnableName("en"), ckgTestEnableName("test_en"), ckgInstName("ckg"),
       exportModuleHierarchy(false), stripFirDebugInfo(true),
-      stripDebugInfo(false), fixupEICGWrapper(false) {
+      stripDebugInfo(false), fixupEICGWrapper(false),
+      extractBranchCover(false) {
   if (!clOptions.isConstructed())
     return;
   outputFilename = clOptions->outputFilename;
@@ -741,4 +754,5 @@ circt::firtool::FirtoolOptions::FirtoolOptions()
   stripFirDebugInfo = clOptions->stripFirDebugInfo;
   stripDebugInfo = clOptions->stripDebugInfo;
   fixupEICGWrapper = clOptions->fixupEICGWrapper;
+  extractBranchCover = clOptions->extractBranchCover;
 }

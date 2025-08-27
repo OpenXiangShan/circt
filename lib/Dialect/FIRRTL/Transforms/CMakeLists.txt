@@ -56,6 +56,9 @@ add_circt_dialect_library(CIRCTFIRRTLTransforms
   Vectorization.cpp
   WireDFT.cpp
 
+  FindBranchCoverPoint.cpp
+  LowerCoverPoints.cpp
+
   DEPENDS
   CIRCTFIRRTLTransformsIncGen
   MLIROMIncGen
