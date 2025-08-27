@@ -973,5 +973,28 @@ def AnnotateInputOnlyModules : Pass<"firrtl-annotate-input-only-modules",
   ];
 }
 
+def LowerCoverPoints : Pass<"firrtl-lower-cover-points", "firrtl::CircuitOp"> {
+  let summary = "Lower coverage points to generated modules";
+  let description = [{
+    This pass lowers annotated coverage points to generated modules.
+  }];
+  let constructor = "circt::firrtl::createLowerCoverPointsPass()";
+  let statistics = [
+    Statistic<"numLoweredCoverPoints", "num-lowered-cover-points",
+      "Number of coverage points lowered">,
+  ];
+}
+
+def FindBranchCoverPoint : Pass<"firrtl-branch-coverage", "firrtl::CircuitOp"> {
+  let summary = "Find and annotate branch coverage points";
+  let description = [{
+    This pass finds and annotates all branch coverage points.
+  }];
+  let constructor = "circt::firrtl::createFindBranchCoverPointPass()";
+  let statistics = [
+    Statistic<"numBranchCoverPoints", "num-branch-cover-points",
+      "Number of branch coverage points found">,
+  ];
+}
 
 #endif // CIRCT_DIALECT_FIRRTL_PASSES_TD

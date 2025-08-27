@@ -9,6 +9,7 @@ set(CIRCT_FIRRTL_Sources
   FIRRTLAnnotationHelper.cpp
   FIRRTLAnnotations.cpp
   FIRRTLAttributes.cpp
+  FIRRTLCoverage.cpp
   FIRRTLDialect.cpp
   FIRRTLFieldSource.cpp
   FIRRTLFolds.cpp
