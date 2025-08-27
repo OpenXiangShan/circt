@@ -100,6 +100,13 @@ LogicalResult firtool::populateCHIRRTLToLowFIRRTL(mlir::PassManager &pm,
 
   pm.nest<firrtl::CircuitOp>().addPass(firrtl::createDropConst());
 
+  // Coverage instrumentation
+  if (opt.shouldExtractBranchCover())
+    pm.nest<firrtl::CircuitOp>().addPass(
+        firrtl::createFindBranchCoverPointPass());
+  if (opt.shouldLowerCoverPoints())
+    pm.nest<firrtl::CircuitOp>().addPass(firrtl::createLowerCoverPointsPass());
+
   if (opt.shouldDedup())
     pm.nest<firrtl::CircuitOp>().addPass(firrtl::createDedup());
 
@@ -759,6 +766,11 @@ struct FirtoolCmdOptions {
   // `-sv-extract-test-code` has been removed.
   llvm::cl::opt<bool> lintXmrsInDesign{
       "lint-xmrs-in-design", llvm::cl::desc("Lint XMRs in the design"),
+};
+
+  llvm::cl::opt<bool> extractBranchCover{
+      "extract-branch-cover",
+      llvm::cl::desc("Instrument the circuit to extract branch coverage"),
       llvm::cl::init(false)};
 };
 } // namespace
@@ -799,7 +811,8 @@ circt::firtool::FirtoolOptions::FirtoolOptions()
       disableCSEinClasses(false), selectDefaultInstanceChoice(false),
       symbolicValueLowering(verif::SymbolicValueLowering::ExtModule),
       disableWireElimination(false), lintStaticAsserts(true),
-      lintXmrsInDesign(true), emitAllBindFiles(false) {
+      lintXmrsInDesign(true), emitAllBindFiles(false),
+      extractBranchCover(false) {
   if (!clOptions.isConstructed())
     return;
   outputFilename = clOptions->outputFilename;
@@ -851,4 +864,5 @@ circt::firtool::FirtoolOptions::FirtoolOptions()
   lintStaticAsserts = clOptions->lintStaticAsserts;
   lintXmrsInDesign = clOptions->lintXmrsInDesign;
   emitAllBindFiles = clOptions->emitAllBindFiles;
+  extractBranchCover = clOptions->extractBranchCover;
 }
