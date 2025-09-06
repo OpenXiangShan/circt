@@ -92,4 +92,11 @@ def HWAggregateToComb : Pass<"hw-aggregate-to-comb", "hw::HWModuleOp"> {
   let dependentDialects = ["comb::CombDialect"];
 }
 
+def HWSeqmemToCombmem : Pass<"hw-seqmem-to-combmem", "mlir::ModuleOp"> {
+  let summary = "Convert all SeqMem to CombMem";
+  let description = [{
+    This pass convert `seq.firmem` with readLatency > 0 to 0 with extra `seq.firreg`.
+  }];
+}
+
 #endif // CIRCT_DIALECT_HW_PASSES_TD
