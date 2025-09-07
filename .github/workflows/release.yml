@@ -12,7 +12,7 @@ jobs:
   build:
     strategy:
       matrix:
-        os: [ ubuntu-22.04, ubuntu-24.04 ]
+        os: [ ubuntu-20.04, ubuntu-22.04, ubuntu-24.04 ]
     runs-on: ubuntu-latest
     container: ghcr.io/openxiangshan/xs-env:${{ matrix.os }}
 
@@ -28,10 +28,13 @@ jobs:
           VERSION="${BRANCH#firtool-}"
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
 
-      - name: Install dependencies
+      - name: Setup cmake
+        uses: jwlawson/actions-setup-cmake@v2
+
+      - name: Setup ninja
         run: |
           apt update
-          apt install -y cmake ninja-build
+          apt install -y ninja-build
 
       - name: Configure
         run: |
