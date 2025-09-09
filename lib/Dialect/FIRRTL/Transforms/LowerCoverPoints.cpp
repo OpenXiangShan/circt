@@ -515,7 +515,7 @@ void LowerCoverPointsPass::generateCoverCpp(const std::string &outputDir) {
 
   // DPI-C functions
   for (const auto &[groupName, points] : coverPoints) {
-    ss << "\nextern \"C\" void " << getDpicFuncName(groupName)
+    ss << "\nextern \"C\" __attribute__((weak)) void " << getDpicFuncName(groupName)
        << "(uint64_t index) {\n";
     ss << "  coverPoints." << groupName << "[index] = 1;\n";
     ss << "}\n";
