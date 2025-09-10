@@ -8,9 +8,9 @@
 #include "circt/Dialect/HW/HWOps.h"
 #include "circt/Dialect/HW/HWPasses.h"
 #include "circt/Dialect/HW/HWTypes.h"
+#include "circt/Dialect/Seq/SeqOps.h"
 #include "mlir/Pass/Pass.h"
 #include "llvm/Support/Debug.h"
-#include <circt/Dialect/Seq/SeqOps.h>
 
 #define DEBUG_TYPE "hw-seqmem-to-combmem"
 

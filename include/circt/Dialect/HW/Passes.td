@@ -99,4 +99,12 @@ def HWSeqmemToCombmem : Pass<"hw-seqmem-to-combmem", "mlir::ModuleOp"> {
   }];
 }
 
+def HWAssignUniqueInnerSym : Pass<"hw-assign-unique-inner-sym", "mlir::ModuleOp"> {
+  let summary = "Assign unique InnerSym for firreg and firmem ports";
+  let description = [{
+    This pass add unique InnerSym for all `seq::FirRegOp`, `seq::FirMemReadOp`,
+    `seq::FirMemWriteOp` and `seq::FirMemReadWriteOp` in a module.
+  }];
+}
+
 #endif // CIRCT_DIALECT_HW_PASSES_TD

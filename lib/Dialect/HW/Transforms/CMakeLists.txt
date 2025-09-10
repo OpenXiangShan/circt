@@ -8,6 +8,7 @@ add_circt_dialect_library(CIRCTHWTransforms
   FlattenModules.cpp
   FooWires.cpp
   HWSeqmemToCombmem.cpp
+  HWAssignUniqueInnerSym.cpp
 
   DEPENDS
   CIRCTHWTransformsIncGen
