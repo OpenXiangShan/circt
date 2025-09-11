@@ -393,6 +393,7 @@ public:
 
   FirtoolOptions &setEmitAllBindFiles(bool value) {
     emitAllBindFiles = value;
+    return *this;
   }
 
   FirtoolOptions &setExtractBranchCover(bool value) {

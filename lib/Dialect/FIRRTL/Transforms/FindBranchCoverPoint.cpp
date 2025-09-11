@@ -9,15 +9,24 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "PassDetails.h"
 #include "circt/Dialect/FIRRTL/FIRRTLCoverage.h"
+#include "circt/Dialect/FIRRTL/Passes.h"
+#include "mlir/Pass/Pass.h"
+
+namespace circt {
+namespace firrtl {
+#define GEN_PASS_DEF_FINDBRANCHCOVERPOINT
+#include "circt/Dialect/FIRRTL/Passes.h.inc"
+} // namespace firrtl
+} // namespace circt
 
 using namespace circt;
 using namespace firrtl;
 
 namespace {
-class FindBranchCoverPointPass
-    : public FindBranchCoverPointBase<FindBranchCoverPointPass> {
+class FindBranchCoverPoint
+    : public circt::firrtl::impl::FindBranchCoverPointBase<
+          FindBranchCoverPoint> {
 public:
   void runOnOperation() final;
 
@@ -26,7 +35,7 @@ private:
 };
 } // namespace
 
-void FindBranchCoverPointPass::runOnOperation() {
+void FindBranchCoverPoint::runOnOperation() {
   auto circuit = getOperation();
 
   circuit.walk([&](Operation *op) {
@@ -37,7 +46,7 @@ void FindBranchCoverPointPass::runOnOperation() {
   });
 }
 
-Value FindBranchCoverPointPass::getNonConstBranchCondition(Operation *op) {
+Value FindBranchCoverPoint::getNonConstBranchCondition(Operation *op) {
   // when (cond) { ... }
   if (auto whenOp = dyn_cast<WhenOp>(op)) {
     auto cond = whenOp.getCondition();
@@ -47,12 +56,8 @@ Value FindBranchCoverPointPass::getNonConstBranchCondition(Operation *op) {
   // Mux(cond, ..., ...)
   else if (auto mux = dyn_cast<MuxPrimOp>(op)) {
     auto cond = mux.getSel();
-    if (cond && !cond.getType().cast<FIRRTLType>().isConst())
+    if (cond && !cast<FIRRTLType>(cond.getType()).isConst())
       return cond;
   }
   return nullptr;
-}
-
-std::unique_ptr<mlir::Pass> circt::firrtl::createFindBranchCoverPointPass() {
-  return std::make_unique<FindBranchCoverPointPass>();
 }
