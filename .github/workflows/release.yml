@@ -5,7 +5,7 @@ on:
     # Runs at 23:15 Asia/Shanghai (UTC+8) => 15:15 UTC
     - cron: '15 15 * * *'
   push:
-    branches: [ firtool-1.62.1 ]
+    branches: [ firtool-1.62.1, firtool-1.128.0 ]
 
 jobs:
   # 1. Build artifacts in parallel
@@ -46,7 +46,6 @@ jobs:
             -DLLVM_EXTERNAL_PROJECTS=circt        \
             -DLLVM_EXTERNAL_CIRCT_SOURCE_DIR=$PWD \
             -DLLVM_BUILD_EXAMPLES=OFF             \
-            -DLLVM_ENABLE_TERMINFO=OFF            \
             -DLLVM_ENABLE_ZSTD=OFF                \
             -DVERILATOR_DISABLE=ON                \
             -DCMAKE_EXPORT_COMPILE_COMMANDS=OFF

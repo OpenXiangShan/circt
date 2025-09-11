@@ -114,10 +114,9 @@ LogicalResult firtool::populateCHIRRTLToLowFIRRTL(mlir::PassManager &pm,
 
   // Coverage instrumentation
   if (opt.shouldExtractBranchCover())
-    pm.nest<firrtl::CircuitOp>().addPass(
-        firrtl::createFindBranchCoverPointPass());
+    pm.nest<firrtl::CircuitOp>().addPass(firrtl::createFindBranchCoverPoint());
   if (opt.shouldLowerCoverPoints())
-    pm.nest<firrtl::CircuitOp>().addPass(firrtl::createLowerCoverPointsPass());
+    pm.nest<firrtl::CircuitOp>().addPass(firrtl::createLowerCoverPoints());
 
   if (opt.shouldDedup())
     pm.nest<firrtl::CircuitOp>().addPass(firrtl::createDedup());
