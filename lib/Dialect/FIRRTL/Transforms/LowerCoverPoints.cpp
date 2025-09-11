@@ -9,8 +9,9 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "PassDetails.h"
 #include "circt/Dialect/FIRRTL/FIRRTLCoverage.h"
+#include "circt/Dialect/FIRRTL/Passes.h"
+#include "mlir/Pass/Pass.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/FormatVariadic.h"
 #include <filesystem>
@@ -18,6 +19,13 @@
 #include <set>
 
 #define DEBUG_TYPE "lower-cover"
+
+namespace circt {
+namespace firrtl {
+#define GEN_PASS_DEF_LOWERCOVERPOINTS
+#include "circt/Dialect/FIRRTL/Passes.h.inc"
+} // namespace firrtl
+} // namespace circt
 
 using namespace circt;
 using namespace firrtl;
@@ -30,7 +38,8 @@ public:
 };
 
 namespace {
-class LowerCoverPointsPass : public LowerCoverPointsBase<LowerCoverPointsPass> {
+class LowerCoverPointsPass
+    : public circt::firrtl::impl::LowerCoverPointsBase<LowerCoverPointsPass> {
 public:
   void runOnOperation() final;
 
@@ -116,7 +125,7 @@ void LowerCoverPointsPass::runOnOperation() {
       modCoverPoints[c->modName].indices.push_back(index++);
 
       Value curValue = c->op->getResult(0);
-      auto t = dyn_cast<IntType>(curValue.getType().cast<FIRRTLType>());
+      auto t = dyn_cast<IntType>(cast<FIRRTLType>(curValue.getType()));
       c->width = t.getWidthOrSentinel();
       Location loc = c->op->getLoc();
 
@@ -142,7 +151,7 @@ void LowerCoverPointsPass::runOnOperation() {
       RegOp xorAsyncReg;
       if (!isTopLevel) {
         auto xorRegName = builder.getStringAttr("xor_reg");
-        if (reset.getType().isa<AsyncResetType>()) {
+        if (isa<AsyncResetType>(reset.getType())) {
           xorAsyncReg = builder.create<RegOp>(loc, t, clock, xorRegName);
         } else {
           auto zero = builder.create<ConstantOp>(loc, t, APInt(c->width, 0));
@@ -166,7 +175,7 @@ void LowerCoverPointsPass::runOnOperation() {
         // xor_reg := xorVal
         // Chisel feature? For async reset behavior, insert mux: reset ? 0.U :
         // xorVal
-        if (reset.getType().isa<AsyncResetType>()) {
+        if (isa<AsyncResetType>(reset.getType())) {
           auto zero = builder.create<ConstantOp>(loc, t, APInt(c->width, 0));
           auto mux =
               builder.create<MuxPrimOp>(loc, reset, zero, xorVal.getResult());
@@ -232,19 +241,19 @@ void LowerCoverPointsPass::runOnOperation() {
 std::optional<CoverPointInfo>
 LowerCoverPointsPass::getCoverPointInfo(Operation *op) {
   auto attr = op->getAttr("annotations");
-  auto arrayAttr = attr.dyn_cast_or_null<mlir::ArrayAttr>();
+  auto arrayAttr = dyn_cast_or_null<mlir::ArrayAttr>(attr);
 
   if (!arrayAttr)
     return std::nullopt;
 
   for (auto elem : arrayAttr) {
-    auto dict = elem.dyn_cast<mlir::DictionaryAttr>();
+    auto dict = dyn_cast<mlir::DictionaryAttr>(elem);
 
     if (!dict)
       continue;
 
     auto classAttr = dict.getAs<mlir::StringAttr>("class");
-    if (!classAttr || !classAttr.getValue().endswith(".CoverPointAnnotation"))
+    if (!classAttr || !classAttr.getValue().ends_with(".CoverPointAnnotation"))
       continue;
 
     auto nameAttr = dict.getAs<mlir::StringAttr>("name");
@@ -284,7 +293,7 @@ void LowerCoverPointsPass::findFieldInPort(
     if (dirCond) {
       results.push_back(lazyValue());
     }
-  } else if (auto bundle = type.dyn_cast<BundleType>()) {
+  } else if (auto bundle = dyn_cast<BundleType>(type)) {
     for (auto it : llvm::enumerate(bundle.getElements())) {
       size_t index = it.index();
       const auto &elem = it.value();
@@ -318,7 +327,7 @@ Value LowerCoverPointsPass::getClock(FModuleOp moduleOp, OpBuilder &builder) {
   auto ports = moduleOp.getPorts();
 
   SmallVector<Value> clockPorts;
-  auto clockCond = [](Type t, StringRef name) { return t.isa<ClockType>(); };
+  auto clockCond = [](Type t, StringRef name) { return isa<ClockType>(t); };
   findFieldInPorts(ports, clockCond, Direction::In, clockPorts, moduleOp,
                    builder);
 
@@ -339,10 +348,10 @@ Value LowerCoverPointsPass::getReset(FModuleOp moduleOp, OpBuilder &builder) {
 
   SmallVector<Value> resetPorts;
   auto resetCond = [](Type t, StringRef name) {
-    if (t.isa<ResetType>() || t.isa<AsyncResetType>())
+    if (isa<ResetType>(t) || isa<AsyncResetType>(t))
       return true;
-    if (auto uintType = t.dyn_cast<UIntType>())
-      return uintType.getWidthOrSentinel() == 1 && name.endswith("reset");
+    if (auto uintType = dyn_cast<UIntType>(t))
+      return uintType.getWidthOrSentinel() == 1 && name.ends_with("reset");
     return false;
   };
   findFieldInPorts(ports, resetCond, Direction::In, resetPorts, moduleOp,
@@ -422,7 +431,8 @@ InstanceOp LowerCoverPointsPass::createExtModule(std::string group, int index,
 
   auto extModule = builder.create<FExtModuleOp>(
       loc, builder.getStringAttr(extModName + "_" + std::to_string(index)),
-      convention, ports, extModName, annotations, parameters, ArrayAttr{});
+      convention, ports, mlir::ArrayAttr(), extModName, annotations, parameters,
+      ArrayAttr{}, mlir::ArrayAttr());
   extModule.setVisibility(SymbolTable::Visibility::Private);
 
   builder.restoreInsertionPoint(saveIP);
@@ -515,8 +525,8 @@ void LowerCoverPointsPass::generateCoverCpp(const std::string &outputDir) {
 
   // DPI-C functions
   for (const auto &[groupName, points] : coverPoints) {
-    ss << "\nextern \"C\" __attribute__((weak)) void " << getDpicFuncName(groupName)
-       << "(uint64_t index) {\n";
+    ss << "\nextern \"C\" __attribute__((weak)) void "
+       << getDpicFuncName(groupName) << "(uint64_t index) {\n";
     ss << "  coverPoints." << groupName << "[index] = 1;\n";
     ss << "}\n";
   }
@@ -549,8 +559,4 @@ void LowerCoverPointsPass::generateCoverCpp(const std::string &outputDir) {
   std::ofstream cpp(outputDir + "/firrtl-cover.cpp");
   cpp << ss.str();
   cpp.close();
-}
-
-std::unique_ptr<mlir::Pass> circt::firrtl::createLowerCoverPointsPass() {
-  return std::make_unique<LowerCoverPointsPass>();
 }
