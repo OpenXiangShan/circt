@@ -107,4 +107,12 @@ def HWAssignUniqueInnerSym : Pass<"hw-assign-unique-inner-sym", "mlir::ModuleOp"
   }];
 }
 
+def HWAssignUniqueID : Pass<"hw-assign-unique-id", "mlir::ModuleOp"> {
+  let summary = "Assign unique ID for firreg and firmem ports";
+  let description = [{
+    This pass add unique ID for all `seq::FirRegOp`, `seq::FirMemReadOp`,
+    `seq::FirMemWriteOp` and `seq::FirMemReadWriteOp` in a module.
+  }];
+}
+
 #endif // CIRCT_DIALECT_HW_PASSES_TD

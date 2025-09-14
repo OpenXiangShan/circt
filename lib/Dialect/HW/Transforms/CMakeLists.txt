@@ -9,6 +9,7 @@ add_circt_dialect_library(CIRCTHWTransforms
   FooWires.cpp
   HWSeqmemToCombmem.cpp
   HWAssignUniqueInnerSym.cpp
+  HWAssignUniqueID.cpp
 
   DEPENDS
   CIRCTHWTransformsIncGen
