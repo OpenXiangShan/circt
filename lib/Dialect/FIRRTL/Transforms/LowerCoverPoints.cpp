@@ -465,8 +465,9 @@ std::string LowerCoverPointsPass::getExtModuleBody(const std::string &groupName,
 
   std::stringstream verilog;
   verilog << "/*verilator tracing_off*/\n";
-  verilog << "module " << extModName << "(\n  " << io << "\n);\n";
-  verilog << "  parameter COVER_INDEX;\n";
+  verilog << "module " << extModName << "#(\n";
+  verilog << "  parameter longint unsigned COVER_INDEX\n";
+  verilog << ")(\n  " << io << "\n);\n";
   verilog << "`ifndef SYNTHESIS\n";
   verilog << "  import \"DPI-C\" function void " << dpiFuncName
           << "(longint unsigned cover_index);\n";
