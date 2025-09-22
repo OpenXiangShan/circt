@@ -115,4 +115,16 @@ def HWAssignUniqueID : Pass<"hw-assign-unique-id", "mlir::ModuleOp"> {
   }];
 }
 
+def HWInsertWires : Pass<"hw-insert-wires", "hw::HWModuleOp"> {
+  let summary = "Insert wires for direct connections between module ports and seq operations";
+  let description = [{
+    This pass inserts hw.wire operations between direct connections involving:
+    - hw.module IOs and seq register/memory operations
+    - Direct connections between seq register/memory operations
+    
+    The target operations are seq::FirRegOp, seq::FirMemReadOp, 
+    seq::FirMemWriteOp, and seq::FirMemReadWriteOp.
+  }];
+}
+
 #endif // CIRCT_DIALECT_HW_PASSES_TD
