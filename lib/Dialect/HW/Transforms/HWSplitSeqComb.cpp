@@ -1,0 +1,215 @@
+//===- HWSplitSeqComb.cpp - Split flattened module into S/C -----*- C++ -*-===//
+//
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+//===----------------------------------------------------------------------===//
+//
+// This pass takes a flattened HW module and splits it into two modules:
+// S (sequential) and C (combinational).
+// - S contains only seq::FirRegOp, seq::FirMemReadOp, seq::FirMemWriteOp,
+//   seq::FirMemReadWriteOp, seq::FirMemOp, and hw::ConstantOp.
+// - C contains the remaining logic (combinational and wires, constants kept).
+// Boundary values between S and C are materialized as new IO ports.
+// Constants are kept in both modules and never routed via IO.
+//
+// The transform duplicates the original hw.module into two modules, then:
+//  - In S: add inputs for non-constant operands of seq ops, add outputs for
+//          results of seq ops, and erase other ops.
+//  - In C: add outputs for values driving seq-op operands, add inputs for
+//          results of seq ops, replace their uses, then erase seq ops.
+//
+//===----------------------------------------------------------------------===//
+
+#include "circt/Dialect/HW/HWOps.h"
+#include "circt/Dialect/HW/HWPasses.h"
+#include "circt/Dialect/Seq/SeqOps.h"
+#include "mlir/IR/Builders.h"
+#include "mlir/IR/SymbolTable.h"
+#include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/DenseSet.h"
+#include "llvm/ADT/STLExtras.h"
+#include <numeric>
+
+#define DEBUG_TYPE "hw-split-seq-comb"
+
+namespace circt {
+namespace hw {
+#define GEN_PASS_DEF_HWSPLITSEQCOMB
+#include "circt/Dialect/HW/Passes.h.inc"
+} // namespace hw
+} // namespace circt
+
+using namespace mlir;
+using namespace circt;
+using namespace hw;
+
+namespace {
+
+// The boundary seq ops which define the S<->C interface.
+static bool isSeqBoundaryOp(Operation *op) {
+  return isa<seq::FirRegOp, seq::FirMemReadOp, seq::FirMemWriteOp,
+             seq::FirMemReadWriteOp>(op);
+}
+
+static bool isConst(Value v) { return v.getDefiningOp<hw::ConstantOp>(); }
+
+// Append a unique input for a given value if not yet present.
+static Value appendUniqueInput(HWModuleOp mod, DenseMap<Value, Value> &map,
+                               Value v, StringRef baseName) {
+  if (auto it = map.find(v); it != map.end())
+    return it->second;
+  auto ty = v.getType();
+  std::string name = (baseName + Twine(map.size())).str();
+  auto pair = mod.appendInput(name, ty);
+  Value argVal = pair.second;
+  map.try_emplace(v, argVal);
+  return argVal;
+}
+
+// Append a unique output for a given value if not yet present.
+static void appendUniqueOutput(HWModuleOp mod, DenseSet<Value> &added, Value v,
+                               StringRef baseName) {
+  if (added.contains(v))
+    return;
+  std::string name = (baseName + Twine(added.size())).str();
+  mod.appendOutput(name, v);
+  added.insert(v);
+}
+
+struct HWSplitSeqCombPass
+    : circt::hw::impl::HWSplitSeqCombBase<HWSplitSeqCombPass> {
+  void runOnOperation() override {
+    auto top = getOperation(); // mlir::ModuleOp
+
+    SmallVector<HWModuleOp> hwMods;
+    top.walk([&](HWModuleOp m) { hwMods.push_back(m); });
+    if (hwMods.empty())
+      return;
+    // Split the first (and should be the only) flattened module.
+    HWModuleOp orig = hwMods.front();
+
+    // Clone two copies: S and C directly into the module after the original.
+    OpBuilder builder(top.getContext());
+    builder.setInsertionPointAfter(orig);
+    auto sClone = cast<HWModuleOp>(builder.clone(*orig));
+    builder.setInsertionPointAfter(sClone);
+    auto cClone = cast<HWModuleOp>(builder.clone(*orig));
+
+    // Give them new names.
+    auto sym = SymbolTable::getSymbolName(orig);
+    auto sName = StringAttr::get(top.getContext(), (sym.str() + "_S"));
+    auto cName = StringAttr::get(top.getContext(), (sym.str() + "_C"));
+    sClone.setSymName(sName);
+    cClone.setSymName(cName);
+
+    // Record original port counts for S before edits.
+    size_t sOrigInputs = sClone.getNumInputPorts();
+    size_t sOrigOutputs = sClone.getNumOutputPorts();
+
+    // Build S: add inputs for non-const operands of seq ops; outputs for
+    // results of seq ops; erase other ops (except constants and terminator).
+    {
+      // Step 1: remove original outputs to clear the port list and replace
+      // original terminator with empty output op.
+      SmallVector<unsigned> eraseOutputs(sOrigOutputs);
+      std::iota(eraseOutputs.begin(), eraseOutputs.end(), 0);
+      sClone.erasePorts({}, eraseOutputs);
+      auto *term = sClone.getBodyBlock()->getTerminator();
+      auto outOp = cast<hw::OutputOp>(term);
+      OpBuilder outBuilder(outOp);
+      outBuilder.create<hw::OutputOp>(outOp.getLoc());
+      outOp.erase();
+
+      // Step 2: walk seq ops to add inputs/outputs for their operands/results.
+      DenseMap<Value, Value> valToArg;
+      DenseSet<Value> exported;
+      sClone.walk([&](Operation *op) {
+        if (!isSeqBoundaryOp(op))
+          return;
+        // For each non-const operands, create an input.
+        for (OpOperand &operand : op->getOpOperands()) {
+          Value v = operand.get();
+          // Skip constants and memory handles.
+          if (isConst(v) || v.getDefiningOp<seq::FirMemOp>())
+            continue;
+          Value arg = appendUniqueInput(sClone, valToArg, v, "s_in_");
+          operand.set(arg);
+        }
+        // For each result, create an output.
+        for (Value res : op->getResults())
+          appendUniqueOutput(sClone, exported, res, "s_out_");
+      });
+
+      // Step 3: erase non-allowed ops in S by dropping all uses then deleting.
+      SmallVector<Operation *> toErase;
+      for (Operation &op : llvm::make_early_inc_range(*sClone.getBodyBlock())) {
+        if (isa<hw::OutputOp>(&op) || isa<seq::FirMemOp>(&op) ||
+            isSeqBoundaryOp(&op) || isa<hw::ConstantOp>(&op))
+          continue;
+        op.dropAllUses();
+        op.erase();
+      }
+
+      // Step 4: Remove all original inputs and the corresponding block args.
+      SmallVector<unsigned> eraseInputs(sOrigInputs);
+      std::iota(eraseInputs.begin(), eraseInputs.end(), 0);
+      sClone.erasePorts(eraseInputs, {});
+      Block *body = sClone.getBodyBlock();
+      body->eraseArguments(0, sOrigInputs);
+    }
+
+    // Build C: add outputs for seq-op operands (to S), inputs for seq-op
+    // results (from S). Replace seq-op results uses and then erase seq ops.
+    {
+      DenseSet<Value> cOutAdded;     // values exported to S
+      DenseMap<Value, Value> cInMap; // seq result -> input arg (as Value)
+
+      // Collect boundary seq ops and memory decls first to avoid invalidation
+      // during edits.
+      SmallVector<Operation *> seqOps;
+      SmallVector<Operation *> memOps;
+      cClone.walk([&](Operation *op) {
+        if (isSeqBoundaryOp(op))
+          seqOps.push_back(op);
+        else if (isa<seq::FirMemOp>(op))
+          memOps.push_back(op);
+      });
+
+      // For each seq op, create outputs for its non-const operands.
+      for (Operation *op : seqOps) {
+        for (Value v : op->getOperands()) {
+          // Skip constants and memory handles.
+          if (isConst(v) || v.getDefiningOp<seq::FirMemOp>())
+            continue;
+          appendUniqueOutput(cClone, cOutAdded, v, "to_s_");
+        }
+      }
+
+      // For each seq result, add an input and replace uses.
+      for (Operation *op : seqOps) {
+        for (Value res : op->getResults()) {
+          if (cInMap.contains(res))
+            continue;
+          std::string name = (Twine("from_s_") + Twine(cInMap.size())).str();
+          auto pair = cClone.appendInput(name, res.getType());
+          Value argVal = pair.second;
+          cInMap.try_emplace(res, argVal);
+          // Replace all uses of seq result with the new input.
+          res.replaceAllUsesWith(argVal);
+        }
+      }
+
+      // Finally erase all seq ops and memory ops from C.
+      for (Operation *op : seqOps)
+        op->erase();
+      for (Operation *op : memOps)
+        op->erase();
+    }
+
+    // Remove the original module.
+    orig->erase();
+  }
+};
+
+} // namespace

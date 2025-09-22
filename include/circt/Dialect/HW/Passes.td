@@ -127,4 +127,15 @@ def HWInsertWires : Pass<"hw-insert-wires", "hw::HWModuleOp"> {
   }];
 }
 
+def HWSplitSeqComb : Pass<"hw-split-seq-comb", "mlir::ModuleOp"> {
+  let summary = "Split flattened module into sequential S and combinational C modules";
+  let description = [{
+    Duplicate the flattened hw.module into S and C. Keep hw.constant in both.
+    In S: keep only seq ops (FirRegOp/FirMem*), replace their non-constant operands
+    with new inputs, and export their results as outputs. Remove non-seq/non-const ops.
+    In C: add outputs for values that feed seq op operands (non-const), add inputs for
+    seq op results and replace uses, then erase seq ops. The original module is erased.
+  }];
+}
+
 #endif // CIRCT_DIALECT_HW_PASSES_TD

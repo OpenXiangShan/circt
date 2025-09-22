@@ -11,6 +11,7 @@ add_circt_dialect_library(CIRCTHWTransforms
   HWAssignUniqueInnerSym.cpp
   HWAssignUniqueID.cpp
   HWInsertWires.cpp
+  HWSplitSeqComb.cpp
 
   DEPENDS
   CIRCTHWTransformsIncGen
