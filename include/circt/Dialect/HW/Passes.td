@@ -138,4 +138,12 @@ def HWSplitSeqComb : Pass<"hw-split-seq-comb", "mlir::ModuleOp"> {
   }];
 }
 
+def HWCombmemToReg : Pass<"hw-combmem-to-reg", "mlir::ModuleOp"> {
+  let summary = "Convert combmem to register";
+  let description = [{
+    This pass convert firmem with readLatency=0 and related read/write operations to firreg
+  }];
+  let dependentDialects = ["comb::CombDialect"];
+}
+
 #endif // CIRCT_DIALECT_HW_PASSES_TD
