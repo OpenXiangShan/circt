@@ -7,7 +7,7 @@ add_circt_dialect_library(CIRCTHWTransforms
   VerifyInnerRefNamespace.cpp
   FlattenModules.cpp
   FooWires.cpp
-  HWSeqmemToCombmem.cpp
+  HWReduceMemReadLatency.cpp
   HWAssignUniqueInnerSym.cpp
   HWAssignUniqueID.cpp
   HWInsertWires.cpp
