@@ -188,6 +188,18 @@ def HWModuleOp : HWModuleOpBase<"module",
       return insertInput(index, nameAttr, ty);
     }
 
+    /// Insert a list of input ports into the port list at a specific
+    /// location, shifting all subsequent ports. Rewrites block arguments.
+    SmallVector<std::pair<StringAttr, BlockArgument>>
+    insertInputs(unsigned index,
+                 ArrayRef<std::pair<StringAttr, Type>> inputs);
+
+    /// Append a list of input ports to the end of the port list.
+    SmallVector<std::pair<StringAttr, BlockArgument>>
+    appendInputs(ArrayRef<std::pair<StringAttr, Type>> inputs) {
+      return insertInputs(getNumInputPorts(), inputs);
+    }
+
     /// Append an output with a given name and type to the port list.
     /// If the name is not unique, a unique name is created.
     void appendOutput(StringAttr name, Value value) {

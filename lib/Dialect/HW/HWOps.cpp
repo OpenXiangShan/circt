@@ -1164,6 +1164,43 @@ HWModuleOp::insertInput(unsigned index, StringAttr name, Type ty) {
   return {nameAttr, body->getArgument(index)};
 }
 
+SmallVector<std::pair<StringAttr, BlockArgument>>
+HWModuleOp::insertInputs(unsigned index,
+                         ArrayRef<std::pair<StringAttr, Type>> inputs) {
+
+  Block *body = getBodyBlock();
+  assert(index <= getNumInputPorts() && "invalid input index");
+
+  // Find unique names for all inputs.
+  Namespace ns;
+  auto ports = getPortList();
+  for (auto port : ports)
+    ns.newName(port.name.getValue());
+
+  // Rewrite the port list of the module.
+  SmallVector<std::pair<unsigned, PortInfo>> indexedNewPorts;
+  SmallVector<StringAttr> uniqueNames;
+  for (auto &[name, type] : inputs) {
+    auto uniqueName =
+        StringAttr::get(getContext(), ns.newName(name.getValue()));
+    uniqueNames.push_back(uniqueName);
+
+    PortInfo port;
+    port.name = uniqueName;
+    port.dir = ModulePort::Direction::Input;
+    port.type = type;
+    indexedNewPorts.emplace_back(index, port);
+  }
+  modifyModulePorts(getOperation(), indexedNewPorts, {}, {}, {}, body);
+
+  // Collect the new block arguments.
+  SmallVector<std::pair<StringAttr, BlockArgument>> results;
+  for (size_t i = 0; i < uniqueNames.size(); ++i) {
+    results.emplace_back(uniqueNames[i], body->getArgument(index + i));
+  }
+  return results;
+}
+
 void HWModuleOp::insertOutputs(unsigned index,
                                ArrayRef<std::pair<StringAttr, Value>> outputs) {
 
