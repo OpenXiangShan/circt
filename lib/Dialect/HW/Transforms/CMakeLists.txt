@@ -13,6 +13,7 @@ add_circt_dialect_library(CIRCTHWTransforms
   HWInsertWires.cpp
   HWSplitSeqComb.cpp
   HWCombmemToReg.cpp
+  HWRepCut.cpp
 
   DEPENDS
   CIRCTHWTransformsIncGen

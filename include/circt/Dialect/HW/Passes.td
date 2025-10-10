@@ -150,4 +150,27 @@ def HWCombmemToReg : Pass<"hw-combmem-to-reg", "mlir::ModuleOp"> {
   let dependentDialects = ["comb::CombDialect"];
 }
 
+def HWRepCut : Pass<"hw-repcut", "hw::HWModuleOp"> {
+  let summary = "RepCut algorithm for replication-aided graph partitioning";
+  let description = [{
+    This pass implements the RepCut algorithm for partitioning hardware designs
+    with replication-aided graph partitioning. The algorithm:
+    1. Builds a dependency graph from MLIR operations
+    2. Creates cones (trees) from sink nodes backwards to register boundaries
+    3. Groups nodes into pieces based on shared cone membership  
+    4. Builds an intersection hypergraph with sink pieces as vertices and 
+       non-sink pieces as hyperedges
+    5. Uses KaHyPar to partition the hypergraph
+    6. Assigns partition IDs to each operation as "repcut_partitions" attribute
+    
+    Operations may belong to multiple partitions due to replication.
+    Requires KaHyPar external tool to be available in PATH.
+  }];
+  let options = [
+    Option<"numPartitions", "num-partitions", "unsigned", "2",
+      "Number of partitions to create (default: 2)">
+  ];
+  let dependentDialects = ["seq::SeqDialect", "comb::CombDialect"];
+}
+
 #endif // CIRCT_DIALECT_HW_PASSES_TD
