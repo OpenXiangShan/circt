@@ -27,7 +27,6 @@
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/SymbolTable.h"
 #include "llvm/ADT/DenseMap.h"
-#include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/STLExtras.h"
 #include <numeric>
 
@@ -54,26 +53,35 @@ static bool isSeqBoundaryOp(Operation *op) {
 
 static bool isConst(Value v) { return v.getDefiningOp<hw::ConstantOp>(); }
 
-// Append a unique input for a given value if not yet present.
-static Value appendUniqueInput(HWModuleOp mod, DenseMap<Value, Value> &map,
-                               Value v, StringRef baseName) {
+// Collect a unique input for a given value if not yet present.
+// Returns the index in the collection, or the existing mapped value's index.
+static size_t
+collectUniqueInput(DenseMap<Value, size_t> &map,
+                   SmallVector<std::pair<StringAttr, Type>> &inputs, Value v,
+                   StringRef baseName, MLIRContext *ctx) {
   if (auto it = map.find(v); it != map.end())
-    return it->second;
+    return it->second; // Return existing index
+
+  size_t idx = inputs.size();
   auto ty = v.getType();
-  std::string name = (baseName + Twine(map.size())).str();
-  auto pair = mod.appendInput(name, ty);
-  Value argVal = pair.second;
-  map.try_emplace(v, argVal);
-  return argVal;
+  std::string name = (baseName + Twine(idx)).str();
+  inputs.emplace_back(StringAttr::get(ctx, name), ty);
+  map.try_emplace(v, idx);
+
+  return idx;
 }
 
-// Append a unique output for a given value if not yet present.
-static void appendUniqueOutput(HWModuleOp mod, DenseSet<Value> &added, Value v,
-                               StringRef baseName) {
+// Collect a unique output for a given value if not yet present.
+// Returns true if the value was added to the collection.
+static void
+collectUniqueOutput(DenseSet<Value> &added,
+                    SmallVector<std::pair<StringAttr, Value>> &outputs, Value v,
+                    StringRef baseName, MLIRContext *ctx) {
   if (added.contains(v))
-    return;
+    return; // Already added
+
   std::string name = (baseName + Twine(added.size())).str();
-  mod.appendOutput(name, v);
+  outputs.emplace_back(StringAttr::get(ctx, name), v);
   added.insert(v);
 }
 
@@ -103,6 +111,9 @@ struct HWSplitSeqCombPass
     sClone.setSymName(sName);
     cClone.setSymName(cName);
 
+    // Remove the original module.
+    orig->erase();
+
     // Record original port counts for S before edits.
     size_t sOrigInputs = sClone.getNumInputPorts();
     size_t sOrigOutputs = sClone.getNumOutputPorts();
@@ -122,24 +133,49 @@ struct HWSplitSeqCombPass
       outOp.erase();
 
       // Step 2: walk seq ops to add inputs/outputs for their operands/results.
-      DenseMap<Value, Value> valToArg;
+      DenseMap<Value, size_t> valToInputIdx;
       DenseSet<Value> exported;
-      sClone.walk([&](Operation *op) {
-        if (!isSeqBoundaryOp(op))
-          return;
-        // For each non-const operands, create an input.
-        for (OpOperand &operand : op->getOpOperands()) {
+      SmallVector<std::pair<StringAttr, Type>> sInputs;
+      SmallVector<std::pair<StringAttr, Value>> sOutputs;
+
+      // Step 2.1: collect inputs and outputs for operands and record which
+      // operands need replacement
+      SmallVector<std::pair<OpOperand *, size_t>> operandsToReplace;
+      for (Operation &op : *sClone.getBodyBlock()) {
+        if (!isSeqBoundaryOp(&op))
+          continue;
+
+        for (OpOperand &operand : op.getOpOperands()) {
           Value v = operand.get();
           // Skip constants and memory handles.
           if (isConst(v) || v.getDefiningOp<seq::FirMemOp>())
             continue;
-          Value arg = appendUniqueInput(sClone, valToArg, v, "s_in_");
-          operand.set(arg);
+
+          size_t idx = collectUniqueInput(valToInputIdx, sInputs, v, "s_in_",
+                                          sClone.getContext());
+          operandsToReplace.push_back({&operand, idx});
         }
-        // For each result, create an output.
-        for (Value res : op->getResults())
-          appendUniqueOutput(sClone, exported, res, "s_out_");
-      });
+
+        for (Value res : op.getResults())
+          collectUniqueOutput(exported, sOutputs, res, "s_out_",
+                              sClone.getContext());
+      }
+
+      // Step 2.2: Add all collected inputs and outputs at once
+      if (!sInputs.empty()) {
+        // Add all inputs to the module at once using appendInputs
+        sClone.appendInputs(sInputs);
+
+        // Now update the operands with the newly created block arguments
+        Block *sBody = sClone.getBodyBlock();
+        for (auto [operand, idx] : operandsToReplace) {
+          BlockArgument arg = sBody->getArgument(sOrigInputs + idx);
+          operand->set(arg);
+        }
+      }
+
+      if (!sOutputs.empty())
+        sClone.appendOutputs(sOutputs);
 
       // Step 3: erase non-allowed ops in S by dropping all uses then deleting.
       SmallVector<Operation *> toErase;
@@ -162,8 +198,7 @@ struct HWSplitSeqCombPass
     // Build C: add outputs for seq-op operands (to S), inputs for seq-op
     // results (from S). Replace seq-op results uses and then erase seq ops.
     {
-      DenseSet<Value> cOutAdded;     // values exported to S
-      DenseMap<Value, Value> cInMap; // seq result -> input arg (as Value)
+      DenseSet<Value> cOutAdded; // values exported to S
 
       // Collect boundary seq ops and memory decls first to avoid invalidation
       // during edits.
@@ -176,27 +211,54 @@ struct HWSplitSeqCombPass
           memOps.push_back(op);
       });
 
-      // For each seq op, create outputs for its non-const operands.
-      for (Operation *op : seqOps) {
+      // Build mapping of values to their connected sequential ops' unique_ids
+      SmallVector<std::pair<StringAttr, Value>> cOutputs;
+
+      // Collect outputs for all unique values with complete id sets
+      for (Operation *op : seqOps)
         for (Value v : op->getOperands()) {
           // Skip constants and memory handles.
           if (isConst(v) || v.getDefiningOp<seq::FirMemOp>())
             continue;
-          appendUniqueOutput(cClone, cOutAdded, v, "to_s_");
-        }
-      }
 
-      // For each seq result, add an input and replace uses.
-      for (Operation *op : seqOps) {
+          collectUniqueOutput(cOutAdded, cOutputs, v, "to_s_",
+                              cClone.getContext());
+        }
+
+      // Add all collected outputs at once
+      if (!cOutputs.empty())
+        cClone.appendOutputs(cOutputs);
+
+      // Collect all unique seq results that need inputs and record them for
+      // replacement
+      SmallVector<std::pair<StringAttr, Type>> cInputs;
+      DenseMap<Value, size_t> cValueToInputIdx;
+      SmallVector<Value> valuesToReplace;
+      for (Operation *op : seqOps)
         for (Value res : op->getResults()) {
-          if (cInMap.contains(res))
-            continue;
-          std::string name = (Twine("from_s_") + Twine(cInMap.size())).str();
-          auto pair = cClone.appendInput(name, res.getType());
-          Value argVal = pair.second;
-          cInMap.try_emplace(res, argVal);
-          // Replace all uses of seq result with the new input.
-          res.replaceAllUsesWith(argVal);
+          // Collect this value if not already collected
+          size_t oldSize = cInputs.size();
+          collectUniqueInput(cValueToInputIdx, cInputs, res, "from_s_",
+                             cClone.getContext());
+          // If this is a newly collected value, record it for replacement
+          if (cInputs.size() > oldSize)
+            valuesToReplace.push_back(res);
+        }
+
+      // Add all collected inputs at once and update uses
+      if (!cInputs.empty()) {
+        size_t numOrigInputs = cClone.getNumInputPorts();
+
+        // Add all inputs to the module at once using appendInputs
+        cClone.appendInputs(cInputs);
+
+        // Replace all uses with the newly created block arguments
+        Block *cBody = cClone.getBodyBlock();
+        for (Value res : valuesToReplace) {
+          auto it = cValueToInputIdx.find(res);
+          size_t idx = it->second;
+          BlockArgument arg = cBody->getArgument(numOrigInputs + idx);
+          res.replaceAllUsesWith(arg);
         }
       }
 
@@ -206,9 +268,6 @@ struct HWSplitSeqCombPass
       for (Operation *op : memOps)
         op->erase();
     }
-
-    // Remove the original module.
-    orig->erase();
   }
 };
 
