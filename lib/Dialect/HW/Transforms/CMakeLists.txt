@@ -14,6 +14,7 @@ add_circt_dialect_library(CIRCTHWTransforms
   HWSplitSeqComb.cpp
   HWCombmemToReg.cpp
   HWRepCut.cpp
+  HWPartitionModules.cpp
 
   DEPENDS
   CIRCTHWTransformsIncGen

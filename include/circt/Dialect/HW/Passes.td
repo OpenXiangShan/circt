@@ -173,4 +173,21 @@ def HWRepCut : Pass<"hw-repcut", "hw::HWModuleOp"> {
   let dependentDialects = ["seq::SeqDialect", "comb::CombDialect"];
 }
 
+def HWPartitionModules : Pass<"hw-partition-modules", "mlir::ModuleOp"> {
+  let summary = "Partition S and C modules based on repcut_partitions attribute";
+  let description = [{
+    This pass takes modules that have been split into S and C components and
+    further partitions them based on the "repcut_partitions" attribute.
+    
+    For each unique partition ID in the repcut_partitions attributes:
+    1. Clone the module (S or C)
+    2. Remove operations whose repcut_partitions don't include this partition ID
+    3. Remove unused input/output ports
+    
+    The hw.output operation is handled specially as it doesn't have 
+    repcut_partitions attribute.
+  }];
+  let dependentDialects = ["seq::SeqDialect", "comb::CombDialect"];
+}
+
 #endif // CIRCT_DIALECT_HW_PASSES_TD
