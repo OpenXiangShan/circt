@@ -618,6 +618,18 @@ public:
       std::vector<NodeID> edgeNodes(edgeNodesSet.begin(), edgeNodesSet.end());
       hg.addEdge(edgeNodes, edgeWeight);
     }
+
+    // No edges exist, add an edge connecting all nodes to make KaHyPar happy
+    if (hg.edges.empty() && !hg.nodes.empty()) {
+      llvm::dbgs()
+          << "No edges in hypergraph, adding one hyperedge connecting all "
+             "nodes\n";
+      std::vector<NodeID> allNodes;
+      allNodes.reserve(hg.nodes.size());
+      for (size_t i = 0; i < hg.nodes.size(); ++i)
+        allNodes.push_back(i);
+      hg.addEdge(allNodes, 1);
+    }
   }
 };
 
