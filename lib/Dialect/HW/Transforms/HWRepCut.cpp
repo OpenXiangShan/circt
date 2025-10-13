@@ -108,7 +108,7 @@ public:
 
       for (Value operand : op->getOperands()) {
         auto *defOp = operand.getDefiningOp();
-        if (defOp && !isSinkOp(defOp)) {
+        if (defOp && !isUpperBoundOp(defOp)) {
           if (isa<seq::FirMemOp>(defOp) &&
               isa<seq::FirMemReadOp, seq::FirMemWriteOp,
                   seq::FirMemReadWriteOp>(op)) {
@@ -154,16 +154,20 @@ public:
     inNeigh[toId].push_back(fromId);
   }
 
-  // TODO: memory, output, etc.
-  bool isSinkOp(Operation *op) const { return llvm::isa<seq::FirRegOp>(op); }
+  bool isSinkOp(Operation *op) const {
+    return isa<seq::FirRegOp, seq::FirMemOp>(op);
+  }
+
+  bool isSinkID(NodeID id) const { return isSinkOp(idToOp[id]); }
+
+  bool isUpperBoundOp(Operation *op) const {
+    return isa<seq::FirRegOp, seq::FirMemReadOp, seq::FirMemReadWriteOp>(op);
+  }
+
+  bool isUpperBoundID(NodeID id) const { return isUpperBoundOp(idToOp[id]); }
 
   bool isIgnoreOp(Operation *op) const {
     return llvm::isa<hw::OutputOp>(op) || llvm::isa<hw::HWModuleOp>(op);
-  }
-
-  bool isSinkID(NodeID id) const {
-    Operation *op = idToOp[id];
-    return isSinkOp(op);
   }
 
   bool isSinkNode(NodeID id) const {
@@ -236,10 +240,8 @@ public:
       // Add current node and recursively collect dependencies
       depNodes.insert(seed);
       for (NodeID pred : inNeigh[seed]) {
-        if (!isSinkID(pred)) { // Stop at sink operations
-          std::set<NodeID> predDeps = collectTree(pred);
-          depNodes.insert(predDeps.begin(), predDeps.end());
-        }
+        std::set<NodeID> predDeps = collectTree(pred);
+        depNodes.insert(predDeps.begin(), predDeps.end());
       }
 
       treeCache[seed] = depNodes;
