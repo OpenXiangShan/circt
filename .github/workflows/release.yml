@@ -56,7 +56,7 @@ jobs:
 
       - name: Rename
         run: |
-          cp build/bin/firtool firtool-${{ env.VERSION }}-${{ matrix.os }}
+          mv build/bin/firtool firtool-${{ env.VERSION }}-${{ matrix.os }}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
