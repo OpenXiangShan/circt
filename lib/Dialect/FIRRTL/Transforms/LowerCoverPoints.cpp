@@ -177,15 +177,18 @@ void LowerCoverPointsPass::runOnOperation() {
         // xorVal
         if (isa<AsyncResetType>(reset.getType())) {
           auto zero = builder.create<ConstantOp>(loc, t, APInt(c->width, 0));
+          // Convert AsyncReset to UInt for MuxPrimOp.
+          auto resetUInt = builder.create<AsUIntPrimOp>(loc, reset);
           auto mux =
-              builder.create<MuxPrimOp>(loc, reset, zero, xorVal.getResult());
+              builder.create<MuxPrimOp>(loc, resetUInt.getResult(), zero, xorVal.getResult());
           builder.create<ConnectOp>(loc, xorAsyncReg.getResult(),
                                     mux.getResult());
+          c->cover = xorAsyncReg;  // Use the async-reset register in this case.
         } else {
           builder.create<ConnectOp>(loc, xorReg.getResult(),
                                     xorVal.getResult());
+          c->cover = xorReg;
         }
-        c->cover = xorReg;
       }
 
       c++;
