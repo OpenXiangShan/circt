@@ -177,7 +177,7 @@ void LowerCoverPointsPass::runOnOperation() {
         // xorVal
         if (isa<AsyncResetType>(reset.getType())) {
           auto zero = builder.create<ConstantOp>(loc, t, APInt(c->width, 0));
-          // FIX: Convert AsyncReset to UInt for MuxPrimOp
+          // Convert AsyncReset to UInt for MuxPrimOp.
           auto resetUInt = builder.create<AsUIntPrimOp>(loc, reset);
           auto mux =
               builder.create<MuxPrimOp>(loc, resetUInt.getResult(), zero, xorVal.getResult());
